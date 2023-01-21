@@ -785,6 +785,13 @@
        "rounds": 1,
        "type": "eq"
     },
+    {  "id": "checkbox-bad-appearance",
+       "file": "pdfs/checkbox-bad-appearance.pdf",
+       "md5": "acdac655911cb3d33c3fb1462cf2ad56",
+       "rounds": 1,
+       "type": "eq",
+       "forms": true
+    },
     {  "id": "artofwar",
        "file": "pdfs/artofwar.pdf",
        "md5": "7bdd51c327b74f1f7abdd90eedb2f912",
@@ -998,6 +1005,12 @@
        "rounds": 1,
        "lastPage": 1,
        "type": "eq"
+    },
+    {  "id": "bug1811668",
+       "file": "pdfs/bug1811668_reduced.pdf",
+       "md5": "87aa65d89aa0682cbe7b87152b884495",
+       "rounds": 1,
+       "type": "text"
     },
     {  "id": "issue8092",
        "file": "pdfs/issue8092.pdf",
@@ -1993,6 +2006,14 @@
        "file": "pdfs/jbig2_symbol_offset.pdf",
        "md5": "6b22a0f838008fa4d8cb5b40ba095c48",
        "rounds": 1,
+       "type": "eq"
+    },
+    {  "id": "issue15942",
+       "file": "pdfs/issue15942.pdf",
+       "md5": "d690e16e6a3a8486ebf7289a9c43ba39",
+       "rounds": 1,
+       "link": true,
+       "lastPage": 1,
        "type": "eq"
     },
     {  "id": "bug1046314",
@@ -3048,6 +3069,12 @@
        "lastPage": 1,
        "link": true,
        "type": "eq"
+    },
+    {  "id": "issue15910",
+       "file": "pdfs/issue15910.pdf",
+       "md5": "6429d8490e11e226b1cbdf2033c04237",
+       "rounds": 1,
+       "type": "text"
     },
     {  "id": "issue7872",
        "file": "pdfs/issue7872.pdf",

@@ -139,8 +139,12 @@ if (typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION")) {
  * @typedef {Object} DocumentInitParameters
  * @property {string | URL} [url] - The URL of the PDF.
  * @property {BinaryData} [data] - Binary PDF data.
- *   Use typed arrays (Uint8Array) to improve the memory usage. If PDF data is
+ *   Use TypedArrays (Uint8Array) to improve the memory usage. If PDF data is
  *   BASE64-encoded, use `atob()` to convert it to a binary string first.
+ *
+ *   NOTE: If TypedArrays are used they will generally be transferred to the
+ *   worker-thread. This will help reduce main-thread memory usage, however
+ *   it will take ownership of the TypedArrays.
  * @property {Object} [httpHeaders] - Basic authentication headers.
  * @property {boolean} [withCredentials] - Indicates whether or not
  *   cross-site Access-Control requests should be made using credentials such
@@ -189,14 +193,6 @@ if (typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION")) {
  * @property {number} [maxImageSize] - The maximum allowed image size in total
  *   pixels, i.e. width * height. Images above this value will not be rendered.
  *   Use -1 for no limit, which is also the default value.
- * @property {boolean} [transferPdfData] - Determines if we can transfer
- *   TypedArrays used for loading the PDF file, utilized together with:
- *    - The `data`-option, for the `getDocument` function.
- *    - The `initialData`-option, for the `PDFDataRangeTransport` constructor.
- *    - The `chunk`-option, for the `PDFDataTransportStream._onReceiveData`
- *      method.
- *   This will help reduce main-thread memory usage, however it will take
- *   ownership of the TypedArrays. The default value is `false`.
  * @property {boolean} [isEvalSupported] - Determines if we can evaluate strings
  *   as JavaScript. Primarily used to improve performance of font rendering, and
  *   when parsing PDF functions. The default value is `true`.
@@ -237,8 +233,7 @@ if (typeof PDFJSDev === "undefined" || !PDFJSDev.test("PRODUCTION")) {
  */
 
 /**
- * @typedef { string | URL | TypedArray | ArrayBuffer |
- *            PDFDataRangeTransport | DocumentInitParameters
+ * @typedef { string | URL | TypedArray | ArrayBuffer | DocumentInitParameters
  * } GetDocumentParameters
  */
 
@@ -262,7 +257,14 @@ function getDocument(src) {
     source = { url: src };
   } else if (isArrayBuffer(src)) {
     source = { data: src };
-  } else if (src instanceof PDFDataRangeTransport) {
+  } else if (
+    (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) &&
+    src instanceof PDFDataRangeTransport
+  ) {
+    deprecated(
+      "`PDFDataRangeTransport`-instance, " +
+        "please use a parameter object with `range`-property instead."
+    );
     source = { range: src };
   } else {
     if (typeof src !== "object") {
@@ -283,20 +285,20 @@ function getDocument(src) {
     worker = null;
 
   for (const key in source) {
-    const value = source[key];
+    const val = source[key];
 
     switch (key) {
       case "url":
         if (typeof window !== "undefined") {
           try {
             // The full path is required in the 'url' field.
-            params[key] = new URL(value, window.location).href;
+            params[key] = new URL(val, window.location).href;
             continue;
           } catch (ex) {
             warn(`Cannot create valid URL: "${ex}".`);
           }
-        } else if (typeof value === "string" || value instanceof URL) {
-          params[key] = value.toString(); // Support Node.js environments.
+        } else if (typeof val === "string" || val instanceof URL) {
+          params[key] = val.toString(); // Support Node.js environments.
           continue;
         }
         throw new Error(
@@ -304,10 +306,10 @@ function getDocument(src) {
             "either string or URL-object is expected in the url property."
         );
       case "range":
-        rangeTransport = value;
+        rangeTransport = val;
         continue;
       case "worker":
-        worker = value;
+        worker = val;
         continue;
       case "data":
         // Converting string or array-like data to Uint8Array.
@@ -316,21 +318,24 @@ function getDocument(src) {
           PDFJSDev.test("GENERIC") &&
           isNodeJS &&
           typeof Buffer !== "undefined" && // eslint-disable-line no-undef
-          value instanceof Buffer // eslint-disable-line no-undef
+          val instanceof Buffer // eslint-disable-line no-undef
         ) {
-          params[key] = new Uint8Array(value);
-        } else if (value instanceof Uint8Array) {
-          break; // Use the data as-is when it's already a Uint8Array.
-        } else if (typeof value === "string") {
-          params[key] = stringToBytes(value);
+          params[key] = new Uint8Array(val);
         } else if (
-          typeof value === "object" &&
-          value !== null &&
-          !isNaN(value.length)
+          val instanceof Uint8Array &&
+          val.byteLength === val.buffer.byteLength
         ) {
-          params[key] = new Uint8Array(value);
-        } else if (isArrayBuffer(value)) {
-          params[key] = new Uint8Array(value);
+          // Use the data as-is when it's already a Uint8Array that completely
+          // "utilizes" its underlying ArrayBuffer, to prevent any possible
+          // issues when transferring it to the worker-thread.
+          break;
+        } else if (typeof val === "string") {
+          params[key] = stringToBytes(val);
+        } else if (
+          (typeof val === "object" && val !== null && !isNaN(val.length)) ||
+          isArrayBuffer(val)
+        ) {
+          params[key] = new Uint8Array(val);
         } else {
           throw new Error(
             "Invalid PDF binary data: either TypedArray, " +
@@ -339,7 +344,7 @@ function getDocument(src) {
         }
         continue;
     }
-    params[key] = value;
+    params[key] = val;
   }
 
   params.CMapReaderFactory =
@@ -347,7 +352,6 @@ function getDocument(src) {
   params.StandardFontDataFactory =
     params.StandardFontDataFactory || DefaultStandardFontDataFactory;
   params.ignoreErrors = params.stopAtErrors !== true;
-  params.transferPdfData = params.transferPdfData === true;
   params.fontExtraProperties = params.fontExtraProperties === true;
   params.pdfBug = params.pdfBug === true;
   params.enableXfa = params.enableXfa === true;
@@ -445,7 +449,6 @@ function getDocument(src) {
             {
               length: params.length,
               initialData: params.initialData,
-              transferPdfData: params.transferPdfData,
               progressiveDone: params.progressiveDone,
               contentDispositionFilename: params.contentDispositionFilename,
               disableRange: params.disableRange,
@@ -520,8 +523,7 @@ async function _fetchDocument(worker, source, pdfDataRangeTransport, docId) {
     source.contentDispositionFilename =
       pdfDataRangeTransport.contentDispositionFilename;
   }
-  const transfers =
-    source.transferPdfData && source.data ? [source.data.buffer] : null;
+  const transfers = source.data ? [source.data.buffer] : null;
 
   const workerId = await worker.messageHandler.sendWithPromise(
     "GetDocRequest",
@@ -661,6 +663,10 @@ class PDFDocumentLoadingTask {
 
 /**
  * Abstract class to support range requests file loading.
+ *
+ * NOTE: The TypedArrays passed to the constructor and relevant methods below
+ * will generally be transferred to the worker-thread. This will help reduce
+ * main-thread memory usage, however it will take ownership of the TypedArrays.
  */
 class PDFDataRangeTransport {
   /**
@@ -2499,7 +2505,7 @@ class WorkerTransport {
               return;
             }
             assert(
-              isArrayBuffer(value),
+              value instanceof ArrayBuffer,
               "GetReader - expected an ArrayBuffer."
             );
             // Enqueue data chunk into sink, and transfer it
@@ -2585,7 +2591,7 @@ class WorkerTransport {
               return;
             }
             assert(
-              isArrayBuffer(value),
+              value instanceof ArrayBuffer,
               "GetRangeReader - expected an ArrayBuffer."
             );
             sink.enqueue(new Uint8Array(value), 1, [value]);
